@@ -10,7 +10,7 @@ from pyparsing import CaselessLiteral, Dict, Word, delimitedList, Optional, \
     ZeroOrMore, restOfLine, CaselessKeyword, ParseResults
 
 # define SQL keywords
-RESERVED_WORDS = ('ADD','ALL','ALLOCATE','ALTER','AND','ANY','ARE','ARRAY','AS','ASENSITIVE','ASYMMETRIC','AT',
+RESERVED_WORDS = {'ADD','ALL','ALLOCATE','ALTER','AND','ANY','ARE','ARRAY','AS','ASENSITIVE','ASYMMETRIC','AT',
                   'ATOMIC','AUTHORIZATION','BEGIN','BETWEEN','BIGINT','BINARY','BLOB','BOOLEAN','BOTH','BY','CALL',
                   'CALLED','CASCADED','CASE','CAST','CHAR','CHARACTER','CHECK','CLOB','CLOSE','COLLATE','COLUMN',
                   'COMMIT','CONNECT','CONSTRAINT','CONTINUE','CORRESPONDING','CREATE','CROSS','CUBE','CURRENT',
@@ -34,7 +34,7 @@ RESERVED_WORDS = ('ADD','ALL','ALLOCATE','ALTER','AND','ANY','ARE','ARRAY','AS',
                   'SYSTEM_USER','TABLE','THEN','TIME','TIMESTAMP','TIMEZONE_HOUR','TIMEZONE_MINUTE','TO','TRAILING',
                   'TRANSLATION','TREAT','TRIGGER','TRUE','UESCAPE','UNION','UNIQUE','UNKNOWN','UNNEST','UPDATE',
                   'UPPER','USER','USING','VALUE','VALUES','VAR_POP','VAR_SAMP','VARCHAR','VARYING','WHEN','WHENEVER',
-                  'WHERE','WIDTH_BUCKET','WINDOW','WITH','WITHIN','WITHOUT','YEAR')
+                  'WHERE','WIDTH_BUCKET','WINDOW','WITH','WITHIN','WITHOUT','YEAR'}
 AND = CaselessKeyword("AND")
 CREATE = CaselessKeyword("CREATE")
 DOUBLE = CaselessKeyword("DOUBLE")
