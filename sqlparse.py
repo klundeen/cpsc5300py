@@ -4,12 +4,15 @@ By: Kevin Lundeen
 For: CPSC 4300/5300, S17
 
 Based on http://pyparsing.wikispaces.com/file/view/simpleSQL.py: Copyright (c) 2003,2016, Paul McGuire
+
+Using grammar non-terminal names from sql2003 where possible.
 """
 from pyparsing import CaselessLiteral, Dict, Word, delimitedList, Optional, \
     Combine, Group, alphas, nums, alphanums, Forward, oneOf, quotedString, \
     ZeroOrMore, restOfLine, CaselessKeyword, ParseResults
 
 # define SQL keywords
+NON_STANDARD_RESERVED_WORDS = {'COLUMNS', 'SHOW', 'TABLES'}
 RESERVED_WORDS = {'ADD','ALL','ALLOCATE','ALTER','AND','ANY','ARE','ARRAY','AS','ASENSITIVE','ASYMMETRIC','AT',
                   'ATOMIC','AUTHORIZATION','BEGIN','BETWEEN','BIGINT','BINARY','BLOB','BOOLEAN','BOTH','BY','CALL',
                   'CALLED','CASCADED','CASE','CAST','CHAR','CHARACTER','CHECK','CLOB','CLOSE','COLLATE','COLUMN',
@@ -34,28 +37,32 @@ RESERVED_WORDS = {'ADD','ALL','ALLOCATE','ALTER','AND','ANY','ARE','ARRAY','AS',
                   'SYSTEM_USER','TABLE','THEN','TIME','TIMESTAMP','TIMEZONE_HOUR','TIMEZONE_MINUTE','TO','TRAILING',
                   'TRANSLATION','TREAT','TRIGGER','TRUE','UESCAPE','UNION','UNIQUE','UNKNOWN','UNNEST','UPDATE',
                   'UPPER','USER','USING','VALUE','VALUES','VAR_POP','VAR_SAMP','VARCHAR','VARYING','WHEN','WHENEVER',
-                  'WHERE','WIDTH_BUCKET','WINDOW','WITH','WITHIN','WITHOUT','YEAR'}
+                  'WHERE','WIDTH_BUCKET','WINDOW','WITH','WITHIN','WITHOUT','YEAR'} | NON_STANDARD_RESERVED_WORDS
 AND = CaselessKeyword("AND")
+COLUMNS = CaselessKeyword("COLUMNS")
 CREATE = CaselessKeyword("CREATE")
 DOUBLE = CaselessKeyword("DOUBLE")
+DROP = CaselessKeyword("DROP")
 FROM = CaselessKeyword("FROM")
 IN = CaselessKeyword("IN")
 INT = CaselessKeyword("INT") | CaselessKeyword("INTEGER")
 OR = CaselessKeyword("OR")
 SELECT = CaselessKeyword("SELECT")
+SHOW = CaselessKeyword("SHOW")
 TABLE = CaselessKeyword("TABLE")
+TABLES = CaselessKeyword("TABLES")
 TEXT = CaselessKeyword("TEXT")
 VARCHAR = CaselessKeyword("VARCHAR")
 WHERE = CaselessKeyword("WHERE")
 
-selectStmt = Forward()
+query = Forward()
 whereExpression = Forward()
 
-ident = Word(alphas, alphanums + "_$").setName("identifier")
-datatype = Group(VARCHAR + "(" + Word(nums) + ")") | INT | TEXT | DOUBLE
-columnName = (delimitedList(ident, ".", combine=True))
-columnNameList = Group(delimitedList(columnName))
-column_definition = Group(ident("column_name") + datatype("data_type"))
+ident = Word(alphanums + "_$").setName("identifier")
+data_type = Group(VARCHAR + "(" + Word(nums) + ")") | INT | TEXT | DOUBLE
+column_name = (delimitedList(ident, ".", combine=True))
+column_name_list = Group(delimitedList(column_name))
+column_definition = Group(ident("column_name") + data_type("data_type"))
 column_definition_list = Dict(delimitedList(column_definition))
 table_name = delimitedList(ident, ".", combine=True)
 table_names = Group(delimitedList(table_name))
@@ -69,22 +76,29 @@ realNum = Combine(Optional(arithSign) + (Word(nums) + "." + Optional(Word(nums))
 intNum = Combine(Optional(arithSign) + Word(nums) +
                  Optional(E + Optional("+") + Word(nums)))
 
-columnRval = realNum | intNum | quotedString | columnName  # need to add support for alg expressions
+columnRval = realNum | intNum | quotedString | column_name  # need to add support for alg expressions
 whereCondition = Group(
-    (columnName + binop + columnRval) |
-    (columnName + IN + "(" + delimitedList(columnRval) + ")") |
-    (columnName + IN + "(" + selectStmt + ")") |
+    (column_name + binop + columnRval) |
+    (column_name + IN + "(" + delimitedList(columnRval) + ")") |
+    (column_name + IN + "(" + query + ")") |
     ("(" + whereExpression + ")")
 )
 whereExpression << whereCondition + ZeroOrMore((AND | OR) + whereExpression)
 
 # top level statements
 table_definition = CREATE + TABLE + table_name("table_name") + "(" + column_definition_list("table_element_list") + ")"
-selectStmt <<= (SELECT + ('*' | columnNameList)("columns") +
+drop_table_statement = DROP + TABLE + table_name("table_name")
+show_tables_statement = SHOW + TABLES
+show_columns_statement = SHOW + COLUMNS + FROM + table_name("table_name")
+query <<= (SELECT + ('*' | column_name_list)("columns") +
                 FROM + table_names("table_names") +
                 Optional(Group(WHERE + whereExpression), "")("where"))
 
-SQLstatement = table_definition("table_definition") | selectStmt("query")
+SQLstatement = (table_definition("table_definition") |
+                query("query") |
+                drop_table_statement("drop_table_statement") |
+                show_tables_statement("show_tables_statement") |
+                show_columns_statement("show_columns_statement"))
 
 # define Oracle comment format, and ignore them
 oracleSqlComment = "--" + restOfLine

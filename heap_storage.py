@@ -9,8 +9,12 @@ from bsddb3 import db as bdb
 from storage_engine import DbBlock, DbFile, DbRelation
 
 DB_BLOCK_SIZE = 4096
-_DB_ENV = '/Users/klundeen/cpsc4300env/data'  # this can get changed by calling initialize_db_env
+_DB_ENV = ''
 
+def initialize(dbenv):
+    """ Initialize the Heap Storage Engine. """
+    global _DB_ENV
+    _DB_ENV = dbenv
 
 class SlottedPage(DbBlock):
     """ Manage a database block that contains several records.
@@ -207,6 +211,7 @@ class HeapFile(DbFile):
 
     def delete(self):
         """ Delete the physical file. """
+        self.open()
         self.close()
         os.remove(self.dbfilename)
 
@@ -217,8 +222,9 @@ class HeapFile(DbFile):
 
     def close(self):
         """ Close the physical file. """
-        self.db.close()
-        self.closed = True
+        if not self.closed:
+            self.db.close()
+            self.closed = True
 
     def get(self, block_id):
         """ Get a block from the database file. """
@@ -295,16 +301,22 @@ class HeapTable(DbRelation):
             where handle is sufficient to identify one specific record (e.g., returned from an insert
             or select).
         """
-        raise TypeError('FIXME')
+        self.open()
+        block_id, record_id = handle
+        block = self.file.get(block_id)
+        block.delete(record_id)
+        self.file.put(block)
 
     def select(self, where=None, limit=None, order=None, group=None):
         """ Conceptually, execute: SELECT <handle> FROM <table_name> WHERE <where>
             Returns a list of handles for qualifying rows.
         """
-        # FIXME: ignoring where, limit, order, and group
+        # FIXME: ignoring limit, order, group, and more complex where clauses (just doing equality for now)
+        self.open()
         for block_id in self.file.block_ids():
             for record_id in self.file.get(block_id).ids():
-                yield (block_id, record_id)
+                if where is None or self._selected((block_id, record_id), where):
+                    yield (block_id, record_id)
 
     def project(self, handle, column_names=None):
         """ Return a sequence of values for handle given by column_names. """
@@ -317,6 +329,15 @@ class HeapTable(DbRelation):
         else:
             return {k: row[k] for k in column_names}
 
+    def _selected(self, handle, where):
+        """ Checks if given record succeeds given where clause. """
+        # FIXME: just doing equality checks for now
+        row = self.project(handle, where)
+        for column_name in where:
+            if row[column_name] != where[column_name]:
+                return False
+        return True
+
     def _validate(self, row):
         """ Check if the given row is acceptable to insert. Raise ValueError if not.
             Otherwise return the full row dictionary.
@@ -328,6 +349,10 @@ class HeapTable(DbRelation):
                 raise ValueError("don't know how to handle NULLs, defaults, etc. yet")
             else:
                 value = row[column_name]
+            if 'validate' in column:
+                if not column['validate'](value):
+                    print(value)
+                    raise ValueError("value for column " + column_name + ", '" + value + "', is unacceptable")
             full_row[column_name] = value
         return full_row
 

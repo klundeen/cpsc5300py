@@ -27,19 +27,16 @@ class Shell(object):
             try:
                 parse = SQLstatement.parseString(sql)
                 cls._execute(parse)
-            except (KeyError, ParseException) as x:
+            except Exception as x:
                 print(type(x).__name__, ': ', x.args[0], sep='')
-
+                # raise  # FIXME - take this out except for debugging
 
     @classmethod
     def _execute(cls, parse):
         """ Execute the SQL statement from the given parse tree. """
         print(cls.unparse(parse))
-        try:
-            columns, rows, message = sqlexec.dispatch(parse).execute()
-            cls.print_results(columns, rows, message)
-        except Exception as x:
-            print(type(x).__name__, ': ', x.args[0], sep='')
+        columns, attributes, rows, message = sqlexec.dispatch(parse).execute()
+        cls.print_results(columns, attributes, rows, message)
 
     @staticmethod
     def unparse(parse):
@@ -51,14 +48,15 @@ class Shell(object):
         return to_str(parse.asList())
 
     @classmethod
-    def print_results(cls, columns, rows, message):
+    def print_results(cls, columns, attributes, rows, message):
         """ Print out the rows which is a list of lists. The columns is dictionary with column info. """
         if not rows:
             print(message)
             return
-        print([col['column name'] for col in columns])
+        print(columns)
+        print('-' * 12 * len(columns))
         for row in rows:
-            print(row)
+            print([row[k] for k in columns])
 
 if __name__ == "__main__":
     Shell.run()
