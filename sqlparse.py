@@ -12,7 +12,7 @@ from pyparsing import CaselessLiteral, Dict, Word, delimitedList, Optional, \
     ZeroOrMore, restOfLine, CaselessKeyword, ParseResults
 
 # define SQL keywords
-NON_STANDARD_RESERVED_WORDS = {'COLUMNS', 'SHOW', 'TABLES'}
+NON_STANDARD_RESERVED_WORDS = {'BTREE', 'COLUMNS', 'HASH', 'INDEX', 'SHOW', 'TABLES'}
 RESERVED_WORDS = {'ADD','ALL','ALLOCATE','ALTER','AND','ANY','ARE','ARRAY','AS','ASENSITIVE','ASYMMETRIC','AT',
                   'ATOMIC','AUTHORIZATION','BEGIN','BETWEEN','BIGINT','BINARY','BLOB','BOOLEAN','BOTH','BY','CALL',
                   'CALLED','CASCADED','CASE','CAST','CHAR','CHARACTER','CHECK','CLOB','CLOSE','COLLATE','COLUMN',
@@ -39,19 +39,26 @@ RESERVED_WORDS = {'ADD','ALL','ALLOCATE','ALTER','AND','ANY','ARE','ARRAY','AS',
                   'UPPER','USER','USING','VALUE','VALUES','VAR_POP','VAR_SAMP','VARCHAR','VARYING','WHEN','WHENEVER',
                   'WHERE','WIDTH_BUCKET','WINDOW','WITH','WITHIN','WITHOUT','YEAR'} | NON_STANDARD_RESERVED_WORDS
 AND = CaselessKeyword("AND")
+BOOLEAN = CaselessKeyword("BOOLEAN")
+BTREE = CaselessKeyword("BTREE")
 COLUMNS = CaselessKeyword("COLUMNS")
 CREATE = CaselessKeyword("CREATE")
 DOUBLE = CaselessKeyword("DOUBLE")
 DROP = CaselessKeyword("DROP")
 FROM = CaselessKeyword("FROM")
+HASH = CaselessKeyword("HASH")
 IN = CaselessKeyword("IN")
+INDEX = CaselessKeyword("INDEX")
 INT = CaselessKeyword("INT") | CaselessKeyword("INTEGER")
+ON = CaselessKeyword("ON")
 OR = CaselessKeyword("OR")
 SELECT = CaselessKeyword("SELECT")
 SHOW = CaselessKeyword("SHOW")
 TABLE = CaselessKeyword("TABLE")
 TABLES = CaselessKeyword("TABLES")
 TEXT = CaselessKeyword("TEXT")
+UNIQUE = CaselessKeyword("UNIQUE")
+USING = CaselessKeyword("USING")
 VARCHAR = CaselessKeyword("VARCHAR")
 WHERE = CaselessKeyword("WHERE")
 
@@ -59,8 +66,8 @@ query = Forward()
 whereExpression = Forward()
 
 ident = Word(alphanums + "_$").setName("identifier")
-data_type = Group(VARCHAR + "(" + Word(nums) + ")") | INT | TEXT | DOUBLE
-column_name = (delimitedList(ident, ".", combine=True))
+data_type = Group(VARCHAR + "(" + Word(nums) + ")") | INT | TEXT | DOUBLE | BOOLEAN
+column_name = (delimitedList(ident, ".", combine=True)("column_name"))
 column_name_list = Group(delimitedList(column_name))
 column_definition = Group(ident("column_name") + data_type("data_type"))
 column_definition_list = Dict(delimitedList(column_definition))
@@ -87,18 +94,26 @@ whereExpression << whereCondition + ZeroOrMore((AND | OR) + whereExpression)
 
 # top level statements
 table_definition = CREATE + TABLE + table_name("table_name") + "(" + column_definition_list("table_element_list") + ")"
+index_definition = (CREATE + Optional(UNIQUE)("unique") + INDEX + ident("index_name") + ON +
+                    table_name("table_name") + "(" + column_name_list("columns") + ")" +
+                    Optional(USING + (BTREE | HASH)("index_type")))
 drop_table_statement = DROP + TABLE + table_name("table_name")
+drop_index_statement = DROP + INDEX + ident("index_name") + ON + table_name("table_name")
 show_tables_statement = SHOW + TABLES
 show_columns_statement = SHOW + COLUMNS + FROM + table_name("table_name")
+show_index_statement = SHOW + INDEX + FROM + table_name("table_name")
 query <<= (SELECT + ('*' | column_name_list)("columns") +
                 FROM + table_names("table_names") +
                 Optional(Group(WHERE + whereExpression), "")("where"))
 
 SQLstatement = (table_definition("table_definition") |
+                index_definition("index_definition") |
                 query("query") |
                 drop_table_statement("drop_table_statement") |
+                drop_index_statement("drop_index_statement") |
                 show_tables_statement("show_tables_statement") |
-                show_columns_statement("show_columns_statement"))
+                show_columns_statement("show_columns_statement") |
+                show_index_statement("show_index_statement"))
 
 # define Oracle comment format, and ignore them
 oracleSqlComment = "--" + restOfLine

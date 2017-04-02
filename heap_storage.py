@@ -9,12 +9,13 @@ from bsddb3 import db as bdb
 from storage_engine import DbBlock, DbFile, DbRelation
 
 DB_BLOCK_SIZE = 4096
-_DB_ENV = ''
+DB_ENV = ''
+BYTE_ORDER = 'big'
 
 def initialize(dbenv):
     """ Initialize the Heap Storage Engine. """
-    global _DB_ENV
-    _DB_ENV = dbenv
+    global DB_ENV
+    DB_ENV = dbenv
 
 class SlottedPage(DbBlock):
     """ Manage a database block that contains several records.
@@ -32,12 +33,12 @@ class SlottedPage(DbBlock):
                     add(data), get(id), put(id, new_data), delete(id), ids()
 
     """
-    BYTE_ORDER = 'big'
 
     def __init__(self, block=None, block_size=None, block_id=None):
         """
         :param block: page from the database that is using SlottedPage
         :param block_size: initialize a new empty page for the database that is to use SlottedPage
+        :param block_id: id within DbFile
         """
         super().__init__(block=block, block_size=block_size, block_id=block_id)
         if block is None:
@@ -137,14 +138,6 @@ class SlottedPage(DbBlock):
         self.end_free += shift
         self._put_header()
 
-    def _get_n(self, offset):
-        """ Get 2-byte integer at given offset in block. """
-        return int.from_bytes(self.block[offset:offset + 2], byteorder=self.BYTE_ORDER)
-
-    def _put_n(self, offset, n):
-        """ Put a 2-byte integer at given offset in block. """
-        self.block[offset:offset + 2] = int.to_bytes(n, length=2, byteorder=self.BYTE_ORDER)
-
 
 class TestSlottedPage(unittest.TestCase):
     def test_basics(self):
@@ -172,7 +165,7 @@ class TestSlottedPage(unittest.TestCase):
         self.assertIsNone(p.get(id))
         self.assertEqual([i for i in p.ids()], [2])
         p.add(b'George')
-        self.assertEqual([p.get(i) for i in p.ids()], [b'Wow!', b'George'])
+        self.assertEqual({bytes(p.get(i)) for i in p.ids()}, {b'Wow!', b'George'})
 
         # the block
         self.assertEqual(p.block,
@@ -196,7 +189,7 @@ class HeapFile(DbFile):
             return
         self.db = bdb.DB()
         self.db.set_re_len(self.block_size)  # record length - will be ignored if file already exists
-        self.dbfilename = os.path.join(_DB_ENV, self.name + '.db')
+        self.dbfilename = os.path.join(DB_ENV, self.name + '.db')
         dbtype = bdb.DB_RECNO  # we always use record number files
         self.db.open(self.dbfilename, None, dbtype, openflags)
         self.stat = self.db.stat(bdb.DB_FAST_STAT)
@@ -232,7 +225,7 @@ class HeapFile(DbFile):
 
     def get_new(self):
         """ Allocate a new block for the database file.
-            Returns the new empty DbBlock that is managing the records in this block and its block id.
+            Returns the new empty DbBlock that is managing the records in this block.
         """
         self.last += 1
         return SlottedPage(block_size=self.block_size, block_id=self.last)
@@ -351,7 +344,6 @@ class HeapTable(DbRelation):
                 value = row[column_name]
             if 'validate' in column:
                 if not column['validate'](value):
-                    print(value)
                     raise ValueError("value for column " + column_name + ", '" + value + "', is unacceptable")
             full_row[column_name] = value
         return full_row
@@ -374,10 +366,12 @@ class HeapTable(DbRelation):
         for column_name in self.column_names:
             column = self.columns[column_name]
             if column['data_type'] == 'INT':
-                data += int.to_bytes(row[column_name], 4, 'big', signed=True)
+                data += int.to_bytes(row[column_name], length=4, byteorder=BYTE_ORDER, signed=True)
+            elif column['data_type'] == 'BOOLEAN':
+                data += int.to_bytes(int(row[column_name]), length=1, byteorder=BYTE_ORDER, signed=False)
             elif column['data_type'] == 'TEXT':
                 text = row[column_name].encode('utf-8')
-                data += int.to_bytes(len(text), length=2, byteorder='big')
+                data += int.to_bytes(len(text), length=2, byteorder=BYTE_ORDER)
                 data += text
             else:
                 raise ValueError('Cannot marahal ' + column['data_type'])
@@ -389,10 +383,13 @@ class HeapTable(DbRelation):
         for column_name in self.column_names:
             column = self.columns[column_name]
             if column['data_type'] == 'INT':
-                row[column_name] = int.from_bytes(data[offset:offset + 4], byteorder='big', signed=True)
+                row[column_name] = int.from_bytes(data[offset:offset + 4], byteorder=BYTE_ORDER, signed=True)
                 offset += 4
+            elif column['data_type'] == 'BOOLEAN':
+                row[column_name] = bool(int.from_bytes(data[offset:offset + 1], byteorder=BYTE_ORDER, signed=False))
+                offset += 1
             elif column['data_type'] == 'TEXT':
-                size = int.from_bytes(data[offset:offset + 2], byteorder='big')
+                size = int.from_bytes(data[offset:offset + 2], byteorder=BYTE_ORDER)
                 offset += 2
                 row[column_name] = data[offset:offset + size].decode('utf-8')
                 offset += size
@@ -404,7 +401,7 @@ class HeapTable(DbRelation):
 class TestHeapTable(unittest.TestCase):
     def testCreateDrop(self):
         # get rid of underlying file in case it's around from previous failed test
-        try: os.remove(os.path.join(_DB_ENV, '_test_create_drop.db'))
+        try: os.remove(os.path.join(DB_ENV, '_test_create_drop.db'))
         except FileNotFoundError: pass
 
         table = HeapTable('_test_create_drop', ['a', 'b'], {'a': {}, 'b': {}})
@@ -415,7 +412,7 @@ class TestHeapTable(unittest.TestCase):
 
     def testData(self):
         # get rid of underlying file in case it's around from previous failed test
-        try: os.remove(os.path.join(_DB_ENV, '_test_data.db'))
+        try: os.remove(os.path.join(DB_ENV, '_test_data.db'))
         except FileNotFoundError: pass
 
         table = HeapTable('_test_data', ['a', 'b'], {'a': {'data_type': 'INT'}, 'b': {'data_type': 'TEXT'}})

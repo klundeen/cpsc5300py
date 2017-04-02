@@ -5,6 +5,8 @@ from abc import ABC, abstractmethod
 
 class DbBlock(ABC):
     """ Abstraction of a storing records in a database file block. """
+    BYTE_ORDER = 'big'
+
     def __init__(self, block=None, block_size=None, block_id=None):
         """
         Initialize a DbBlock:
@@ -12,10 +14,15 @@ class DbBlock(ABC):
         :param block_size: initialize a new empty page for the database that is to use SlottedPage
         """
         self.id = block_id
+        self.block_size = block_size
         if block is None:
             self.block = bytearray(b'\0' * block_size)
         else:
             self.block = bytearray(block)
+
+    def __len__(self):
+        """ Overload the len() operation to be number of records stored in this block. """
+        return len(tuple(self.ids()))
 
     @abstractmethod
     def add(self, data):
@@ -41,6 +48,16 @@ class DbBlock(ABC):
     def ids(self):
         """ Sequence of ids extant in this block (not including deleted ones). """
         raise TypeError("Not implemented")
+
+    # Following are generally useful for subclasses
+    def _get_n(self, offset, size=2):
+        """ Get size-byte integer at given offset in block. """
+        return int.from_bytes(self.block[offset:offset + size], byteorder=self.BYTE_ORDER)
+
+    def _put_n(self, offset, n, size=2):
+        """ Put a size-byte integer at given offset in block. """
+        self.block[offset:offset + size] = int.to_bytes(n, length=size, byteorder=self.BYTE_ORDER)
+
 
 class DbFile(ABC):
     """ Abstraction of of database file -- a collection of blocks. """
@@ -168,4 +185,65 @@ class DbRelation(ABC):
     @abstractmethod
     def project(self, handle, column_names=None):
         """ Return a sequence of values for handle given by column_names. """
+        raise TypeError('not implemented')
+
+
+class DbIndex(ABC):
+    """ Abstraction of an index on a relation. """
+
+    def __init__(self, relation, name, key, unique=False):
+        """
+        
+        :param relation: DbRelation being indexed 
+        :param name: Name of the index (unique within this relation)
+        :param key: List of column names to index (ordering is lexicographic in given order of columns)
+        :param unique: Do we constrain index keys to be unique?
+        """
+        self.relation = relation
+        self.name = name
+        self.key = key
+        self.unique = unique
+
+    @abstractmethod
+    def create(self):
+        """ Create the index. """
+        raise TypeError('not implemented')
+
+    @abstractmethod
+    def drop(self):
+        """ Drop the index. """
+        raise TypeError('not implemented')
+
+    @abstractmethod
+    def open(self):
+        """ Open existing index. Enables: lookup, [range if supported], insert, delete, update. """
+        raise TypeError('not implemented')
+
+    @abstractmethod
+    def close(self):
+        """ Closes the index. Disables: lookup, [range if supported], insert, delete, update. """
+        raise TypeError('not implemented')
+
+    @abstractmethod
+    def lookup(self, key):
+        """ Find all the rows whose columns are equal to key. Assumes key is a dictionary whose keys are the column 
+            names in the index. Returns a list of row handles.
+        """
+        raise TypeError('not implemented')
+
+    def range(self, minkey, maxkey):
+        """ Finds all the rows whose columns are such that minkey <= columns <= maxkey.  Assumes key is a dictionary 
+            whose keys are the column names in the index. Returns a list of row handles.
+            Some index subclasses do not support range().
+        """
+        raise TypeError('not implemented')
+
+    @abstractmethod
+    def insert(self, handle):
+        """ Insert a row with the given handle. Row must exist in relation already. """
+        raise TypeError('not implemented')
+
+    @abstractmethod
+    def delete(self, handle):
+        """ Delete a row with the given handle. Row must still exist in relation. """
         raise TypeError('not implemented')
