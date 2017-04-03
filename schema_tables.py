@@ -11,6 +11,9 @@ from sqlparse import RESERVED_WORDS
 
 class Schema(object):
     SCHEMA_TABLES = ['_tables', '_columns', '_indices']
+    tables = None
+    columns = None
+    indices = None
 
     @classmethod
     def initialize(cls):
@@ -38,8 +41,10 @@ def acceptable_name(name):
         return False
     return True
 
+
 def acceptable_data_type(data_type):
     return data_type in ('INT', 'TEXT', 'BOOLEAN')
+
 
 class _Tables(HeapTable):
     """ The table that stores the metadata for all other tables.
@@ -49,7 +54,8 @@ class _Tables(HeapTable):
     COLUMN_ORDER = ('table_name',)
     COLUMNS = {'table_name': {'data_type': 'TEXT', 'not_null': True, 'validate': acceptable_name}}
     table_cache = {}  # We use this to avoid having to do concurrency control between different instances in this app
-                      # In general, we only want to open each file once.
+
+    # In general, we only want to open each file once.
 
     def __init__(self):
         super().__init__(self.TABLE_NAME, self.COLUMN_ORDER, self.COLUMNS)
@@ -64,12 +70,13 @@ class _Tables(HeapTable):
     def insert(self, row):
         """ Manually check that table_name is unique. """
         if 'table_name' in row:
-            duplicates = [self.project(id) for id in self.select(where={'table_name': row['table_name']})]
+            duplicates = [self.project(handle) for handle in self.select(where={'table_name': row['table_name']})]
             if duplicates:
                 raise ValueError('Table ' + row['table_name'] + ' already exists.')
         return super().insert(row)
 
-    def get_columns(self, table_name):
+    @staticmethod
+    def get_columns(table_name):
         """ Return a list of column names and column attributes for given table. """
         _columns = Schema.columns
         column_rows = [_columns.project(handle) for handle in _columns.select({'table_name': table_name})]
@@ -86,14 +93,17 @@ class _Tables(HeapTable):
         _Tables.table_cache[table_name] = table
         return table
 
-    def add_to_cache(self, table_name, table):
+    @staticmethod
+    def add_to_cache(table_name, table):
         _Tables.table_cache[table_name] = table
 
-    def remove_from_cache(self, table_name):
+    @staticmethod
+    def remove_from_cache(table_name):
         try:
             del _Tables.table_cache[table_name]
         except KeyError:
             pass
+
 
 class _Columns(HeapTable):
     """ The table that stores the column metadata for all other tables.
@@ -113,7 +123,7 @@ class _Columns(HeapTable):
         super().create()
         bootstrap = {'_tables': ['table_name'],
                      '_columns': ['table_name', 'column_name', 'data_type'],
-                    '_indices': ['table_name', 'index_name', 'seq_in_index', 'column_name', 'index_type', 'is_unique']}
+                     '_indices': ['table_name', 'index_name', 'seq_in_index', 'column_name', 'index_type', 'is_unique']}
         for table_name in bootstrap:
             for column_name in bootstrap[table_name]:
                 self.insert({'table_name': table_name, 'column_name': column_name, 'data_type': 'TEXT'})
@@ -121,8 +131,8 @@ class _Columns(HeapTable):
     def insert(self, row):
         """ Manually check that (table_name, column_name) is unique. """
         if 'table_name' in row and 'column_name' in row:
-            duplicates = [self.project(id) for id in self.select(where={'table_name': row['table_name'],
-                                                                        'column_name': row['column_name']})]
+            duplicates = [self.project(handle) for handle in
+                          self.select(where={'table_name': row['table_name'], 'column_name': row['column_name']})]
             if duplicates:
                 raise ValueError('Column ' + row['column_name'] + ' for ' + row['table_name'] + ' already exists.')
         return super().insert(row)
@@ -130,13 +140,21 @@ class _Columns(HeapTable):
 
 class DummyIndex(DbIndex):
     """ Temporary stub. """
+
     def create(self): pass
+
     def drop(self): pass
+
     def open(self): pass
+
     def close(self): pass
-    def lookup(self): super().lookup()
-    def insert(self): pass
-    def delete(self): pass
+
+    def lookup(self, key): super().lookup(key)
+
+    def insert(self, handle): pass
+
+    def delete(self, handle): pass
+
 
 class _Indices(HeapTable):
     """ The table that stores the index metadata for all indices. """
@@ -161,11 +179,12 @@ class _Indices(HeapTable):
     def get_columns(self, table_name, index_name):
         """ Return a list of column names and column attributes for given table. """
         column_names = {}
+        values = {}
         for handle in self.select({'table_name': table_name, 'index_name': index_name}):
             values = self.project(handle)
             column_names[values['seq_in_index']] = values['column_name']
         index_attributes = values  # the attributes we want on every row
-        column_names = [column_names[i] for i in range(1, len(column_names)+1)]
+        column_names = [column_names[i] for i in range(1, len(column_names) + 1)]
         return column_names, index_attributes
 
     def get_index(self, table_name, index_name):
@@ -181,10 +200,12 @@ class _Indices(HeapTable):
         self.add_to_cache(table_name, index_name, index)
         return index
 
-    def add_to_cache(self, table_name, index_name, index):
+    @staticmethod
+    def add_to_cache(table_name, index_name, index):
         _Tables.table_cache[(table_name, index_name)] = index
 
-    def remove_from_cache(self, table_name, index_name):
+    @staticmethod
+    def remove_from_cache(table_name, index_name):
         try:
             del _Tables.table_cache[(table_name, index_name)]
         except KeyError:

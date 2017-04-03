@@ -7,7 +7,7 @@ import os
 import unittest
 import sqlexec
 from sqlparse import SQLstatement
-from pyparsing import ParseException
+
 
 class Shell(object):
     """ Get SQL statements from user and execute them. """
@@ -79,6 +79,7 @@ class Shell(object):
         for row in rows:
             print([row[k] for k in columns])
 
+
 class TestShell(unittest.TestCase):
     def setUp(self):
         dbenv = os.path.expanduser('~/.dbtests')
@@ -87,7 +88,6 @@ class TestShell(unittest.TestCase):
         for file in os.listdir(dbenv):
             os.remove(os.path.join(dbenv, file))
         Shell.run(statements="SHOW TABLES", dbenv=dbenv)
-
 
     def test_statements(self):
         columns, attributes, rows, message = Shell.run("SHOW COLUMNS FROM _tables")[0]
@@ -99,7 +99,7 @@ class TestShell(unittest.TestCase):
 
         columns, attributes, rows, message = Shell.run("SHOW COLUMNS FROM hsy67")[0]
         self.assertEqual(columns, ['column_name'])
-        self.assertEqual(set([row['column_name'] for row in rows]), set(('a', 'b', 'c')))
+        self.assertEqual(set([row['column_name'] for row in rows]), {'a', 'b', 'c'})
 
         columns, attributes, rows, message = Shell.run("SHOW TABLES")[0]
         self.assertEqual(columns, ('table_name',))
