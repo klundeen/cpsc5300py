@@ -34,13 +34,14 @@ class SlottedPage(DbBlock):
 
     """
 
-    def __init__(self, block=None, block_size=None, block_id=None):
+    def __init__(self, block_size, block=None, block_id=None):
         """
+        :param block_size:
         :param block: page from the database that is using SlottedPage
-        :param block_size: initialize a new empty page for the database that is to use SlottedPage
         :param block_id: id within DbFile
         """
         super().__init__(block=block, block_size=block_size, block_id=block_id)
+        self.block_size = block_size
         if block is None:
             self.num_records = 0
             self.end_free = block_size - 1
@@ -99,6 +100,12 @@ class SlottedPage(DbBlock):
     def ids(self):
         """ Sequence of all non-deleted record ids. """
         return (i for i in range(1, self.num_records + 1) if self._get_header(i)[1] != 0)
+
+    def clear(self):
+        """ Delete all the records. """
+        self.num_records = 0
+        self.end_free = self.block_size - 1
+        self._put_header()
 
     def _get_header(self, record_id=0):
         """ Get the size and offset for given record_id. For record_id of zero, it is the block header. """
@@ -198,7 +205,7 @@ class HeapFile(DbFile):
         for buffer management and file management.
         Uses SlottedPage for storing records within blocks.
     """
-    def __init__(self, name, block_size):
+    def __init__(self, name, block_size=DB_BLOCK_SIZE):
         super().__init__(name)
         self.block_size = block_size
         self.write_queue = {}
@@ -248,14 +255,14 @@ class HeapFile(DbFile):
         """ Get a block from the database file. """
         if block_id in self.write_queue:
             return self.write_queue[block_id]
-        return SlottedPage(block=self.db.get(block_id), block_id=block_id)
+        return SlottedPage(self.block_size, block=self.db.get(block_id), block_id=block_id)
 
     def get_new(self):
         """ Allocate a new block for the database file.
             Returns the new empty DbBlock that is managing the records in this block.
         """
         self.last += 1
-        return SlottedPage(block_size=self.block_size, block_id=self.last)
+        return SlottedPage(self.block_size, block_id=self.last)
 
     def put(self, block):
         """ Write a block back to the database file. """
@@ -285,7 +292,7 @@ class HeapTable(DbRelation):
 
     def __init__(self, table_name, column_names, column_attributes):
         super().__init__(table_name, column_names, column_attributes)
-        self.file = HeapFile(table_name, DB_BLOCK_SIZE)
+        self.file = HeapFile(table_name)
 
     def create(self):
         """ Execute: CREATE TABLE <table_name> ( <columns> )
@@ -429,7 +436,7 @@ class HeapTable(DbRelation):
             elif column['data_type'] == 'BOOLEAN':
                 data += to_bytes(int(row[column_name]), 1)
             elif column['data_type'] == 'TEXT':
-                text = row[column_name].encode('utf-8')
+                text = row[column_name].encode()
                 data += to_bytes(len(text), 2)
                 data += text
             else:
@@ -453,7 +460,7 @@ class HeapTable(DbRelation):
             elif column['data_type'] == 'TEXT':
                 size = from_bytes(offset, 2)
                 offset += 2
-                row[column_name] = data[offset:offset + size].decode('utf-8')
+                row[column_name] = data[offset:offset + size].decode()
                 offset += size
             else:
                 raise ValueError('Cannot unmarahal ' + column['data_type'])

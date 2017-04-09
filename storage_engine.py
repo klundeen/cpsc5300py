@@ -107,6 +107,12 @@ class DbFile(ABC):
         """ Signals the intent that the given block should be written back to the database file. """
         raise TypeError('not implemented')
 
+    def clear(self):
+        """ Delete all records. """
+        ids = [i for i in self.block_ids()]
+        for record_id in ids:
+           self.delete(record_id)
+
     @abstractmethod
     def block_ids(self):
         """ Sequence of block ids for this file. """

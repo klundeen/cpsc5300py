@@ -418,8 +418,6 @@ class TestHashIndex(unittest.TestCase):
             row = {'a': i+100, 'b': -i}
             index.insert(table.insert(row))
         for i in range(1000):
-            if i in [225, 226, 230, 231, 234]:
-                continue
             result = [table.project(handle) for handle in index.lookup({'a': i+100})]
             self.assertEqual(result, [{'a': i+100, 'b': -i}])
 
