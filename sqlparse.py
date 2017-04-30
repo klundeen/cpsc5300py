@@ -8,8 +8,8 @@ Based on http://pyparsing.wikispaces.com/file/view/simpleSQL.py: Copyright (c) 2
 Using grammar non-terminal names from sql2003 where possible.
 """
 from pyparsing import CaselessLiteral, Dict, Word, delimitedList, Optional, \
-    Combine, Group, alphas, nums, alphanums, Forward, oneOf, quotedString, \
-    ZeroOrMore, restOfLine, CaselessKeyword, ParseResults
+    Combine, Group, nums, alphanums, Forward, oneOf, quotedString, \
+    ZeroOrMore, restOfLine, CaselessKeyword
 
 # define SQL keywords
 NON_STANDARD_RESERVED_WORDS = {'BTREE', 'COLUMNS', 'HASH', 'INDEX', 'SHOW', 'TABLES'}
@@ -43,13 +43,16 @@ BOOLEAN = CaselessKeyword("BOOLEAN")
 BTREE = CaselessKeyword("BTREE")
 COLUMNS = CaselessKeyword("COLUMNS")
 CREATE = CaselessKeyword("CREATE")
+DELETE = CaselessKeyword("DELETE")
 DOUBLE = CaselessKeyword("DOUBLE")
 DROP = CaselessKeyword("DROP")
 FROM = CaselessKeyword("FROM")
 HASH = CaselessKeyword("HASH")
 IN = CaselessKeyword("IN")
 INDEX = CaselessKeyword("INDEX")
+INSERT = CaselessKeyword("INSERT")
 INT = CaselessKeyword("INT") | CaselessKeyword("INTEGER")
+INTO = CaselessKeyword("INTO")
 ON = CaselessKeyword("ON")
 OR = CaselessKeyword("OR")
 SELECT = CaselessKeyword("SELECT")
@@ -59,6 +62,7 @@ TABLES = CaselessKeyword("TABLES")
 TEXT = CaselessKeyword("TEXT")
 UNIQUE = CaselessKeyword("UNIQUE")
 USING = CaselessKeyword("USING")
+VALUES = CaselessKeyword("VALUES")
 VARCHAR = CaselessKeyword("VARCHAR")
 WHERE = CaselessKeyword("WHERE")
 
@@ -91,6 +95,8 @@ whereCondition = Group(
     ("(" + whereExpression + ")")
 )
 whereExpression << whereCondition + ZeroOrMore((AND | OR) + whereExpression)
+value = realNum | intNum | quotedString
+value_list = Group(delimitedList(value))
 
 # top level statements
 table_definition = CREATE + TABLE + table_name("table_name") + "(" + column_definition_list("table_element_list") + ")"
@@ -102,12 +108,17 @@ drop_index_statement = DROP + INDEX + ident("index_name") + ON + table_name("tab
 show_tables_statement = SHOW + TABLES
 show_columns_statement = SHOW + COLUMNS + FROM + table_name("table_name")
 show_index_statement = SHOW + INDEX + FROM + table_name("table_name")
+insert_statement = (INSERT + INTO + table_name("table_name") + Optional("(" + column_name_list("columns") + ")") +
+                    VALUES + "(" + value_list("values") + ")")
+delete_statement = DELETE + FROM + table_name("table_name") + Optional(Group(WHERE + whereExpression), "")("where")
 query <<= (SELECT + ('*' | column_name_list)("columns") +
                 FROM + table_names("table_names") +
                 Optional(Group(WHERE + whereExpression), "")("where"))
 
 SQLstatement = (table_definition("table_definition") |
                 index_definition("index_definition") |
+                insert_statement("insert_statement") |
+                delete_statement("delete_statement") |
                 query("query") |
                 drop_table_statement("drop_table_statement") |
                 drop_index_statement("drop_index_statement") |

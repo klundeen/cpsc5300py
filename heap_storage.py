@@ -355,16 +355,22 @@ class HeapTable(DbRelation):
         block.delete(record_id)
         self.file.put(block)
 
-    def select(self, where=None, limit=None, order=None, group=None):
+    def select(self, where=None, limit=None, order=None, group=None, handles=None):
         """ Conceptually, execute: SELECT <handle> FROM <table_name> WHERE <where>
+            If handles is specified, then use those as the base set of records to apply a refined selection to.
             Returns a list of handles for qualifying rows.
         """
         # FIXME: ignoring limit, order, group, and more complex where clauses (just doing equality for now)
         self.open()
-        for block_id in self.file.block_ids():
-            for record_id in self.file.get(block_id).ids():
-                if where is None or self._selected((block_id, record_id), where):
-                    yield (block_id, record_id)
+        if handles is None:
+            for block_id in self.file.block_ids():
+                for record_id in self.file.get(block_id).ids():
+                    if where is None or self._selected((block_id, record_id), where):
+                        yield (block_id, record_id)
+        else:
+            for handle in handles:
+                if where is None or self._selected(handle, where):
+                    yield handle
 
     def project(self, handle, column_names=None):
         """ Return a sequence of values for handle given by column_names. """

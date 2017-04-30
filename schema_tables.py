@@ -210,3 +210,7 @@ class _Indices(HeapTable):
             del _Tables.table_cache[(table_name, index_name)]
         except KeyError:
             pass
+
+    def get_index_names(self, table_name):
+        """ Fetch all index names for given table. """
+        return [self.project(h)['index_name'] for h in self.select({'table_name': table_name, 'seq_in_index': 1})]

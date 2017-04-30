@@ -3,6 +3,7 @@
 """
 from abc import ABC, abstractmethod
 
+
 class DbBlock(ABC):
     """ Abstraction of a storing records in a database file block. """
     BYTE_ORDER = 'big'
@@ -30,17 +31,17 @@ class DbBlock(ABC):
         raise TypeError("Not implemented")
 
     @abstractmethod
-    def get(self, id):
+    def get(self, record_id):
         """ Get a record from the block. """
         raise TypeError("Not implemented")
 
     @abstractmethod
-    def delete(self, id):
+    def delete(self, record_id):
         """ Delete record. """
         raise TypeError("Not implemented")
 
     @abstractmethod
-    def put(self, id, data):
+    def put(self, record_id, data):
         """ Put record with given id. Overwrite previous data for this id. """
         raise TypeError("Not implemented")
 
@@ -111,7 +112,7 @@ class DbFile(ABC):
         """ Delete all records. """
         ids = [i for i in self.block_ids()]
         for record_id in ids:
-           self.delete(record_id)
+            self.delete(record_id)
 
     @abstractmethod
     def block_ids(self):
@@ -182,8 +183,9 @@ class DbRelation(ABC):
         raise TypeError('not implemented')
 
     @abstractmethod
-    def select(self, where=None, limit=None, order=None, group=None):
+    def select(self, where=None, limit=None, order=None, group=None, handles=None):
         """ Conceptually, execute: SELECT <handle> FROM <table_name> WHERE <where>
+            If handles is specified, then use those as the base set of records to apply a refined selection to.
             Returns a list of handles for qualifying rows.
         """
         raise TypeError('not implemented')
