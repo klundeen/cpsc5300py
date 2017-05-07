@@ -86,8 +86,12 @@ class _BTreeStat(_BTreeNode):
             self.height = self._get_block_id(self.HEIGHT)
 
     def save(self):
-        self.block.put(self.ROOT, self._marshal_block_id(self.root_id))
-        self.block.put(self.HEIGHT, self._marshal_block_id(self.height))  # not really a block ID but it fits
+        if len(self.block) < self.HEIGHT:
+            self.block.add(self._marshal_block_id(self.root_id))
+            self.block.add(self._marshal_block_id(self.height))  # not really a block ID but it fits
+        else:
+            self.block.put(self.ROOT, self._marshal_block_id(self.root_id))
+            self.block.put(self.HEIGHT, self._marshal_block_id(self.height))  # not really a block ID but it fits
         super().save()
 
 
@@ -110,11 +114,14 @@ class _BTreeInterior(_BTreeNode):
 
     def find(self, key, depth):
         """ Get next block down in tree where key must be. """
-        down = self.pointers[-1]  # last pointer is correct if we don't find an earlier boundary
-        for i, boundary in enumerate(self.boundaries):
-            if boundary > key:
-                down = self.pointers[i-1] if i > 0 else self.first
-                break
+        if key is None:
+            down = self.first
+        else:
+            down = self.pointers[-1]  # last pointer is correct if we don't find an earlier boundary
+            for i, boundary in enumerate(self.boundaries):
+                if boundary > key:
+                    down = self.pointers[i-1] if i > 0 else self.first
+                    break
         if depth == 2:
             return _BTreeLeaf(self.file, down, self.key_profile)
         else:
@@ -245,19 +252,22 @@ class BTreeIndex(DbIndex):
         """ Find all the rows whose columns are equal to key. Assumes key is a dictionary whose keys are the column 
             names in the index. Returns a list of row handles.
         """
-        return self._lookup(self.root, self.stat.height, self._tkey(key))
+        self.open()
+        tkey = self._tkey(key)
+        leaf = self._lookup(self.root, self.stat.height, tkey)
+        handle = leaf.find_eq(tkey)
+        return [handle] if handle is not None else []
 
     def _lookup(self, node, depth, tkey):
         """ Recursive lookup. """
         if isinstance(node, _BTreeLeaf):  # base case: a leaf node
-            handle = node.find_eq(tkey)
-            return [handle] if handle is not None else []
+            return node
         else:
             return self._lookup(node.find(tkey, depth), depth - 1, tkey)  # recursive case: go down one level
 
-
     def insert(self, handle):
         """ Insert a row with the given handle. Row must exist in relation already. """
+        self.open()
         tkey = self._tkey(self.relation.project(handle, self.key))
 
         split_root = self._insert(self.root, self.stat.height, tkey, handle)
@@ -279,14 +289,35 @@ class BTreeIndex(DbIndex):
             whose keys are the column names in the index. Returns a list of row handles.
             Some index subclasses do not support range().
         """
-        raise TypeError('not implemented')  # FIXME
+        tmin = self._tkey(minkey)
+        tmax = self._tkey(maxkey)
+        start = self._lookup(self.root, self.stat.height, tmin)
+        for tkey in sorted(start.keys):
+            if tmin is None or tkey >= tmin:
+                yield start.keys[tkey]
+        next_leaf_id = start.next_leaf
+        while next_leaf_id > 0:
+            next_leaf = _BTreeLeaf(self.file, next_leaf_id, self.key_profile)
+            for tkey in sorted(next_leaf.keys):
+                if tmax is not None and tkey > tmax:
+                    return
+                yield next_leaf.keys[tkey]
+            next_leaf_id = next_leaf.next_leaf
 
     def delete(self, handle):
         """ Delete a row with the given handle. Row must still exist in relation. """
-        raise TypeError('not implemented')  # FIXME
+        tkey = self._tkey(self.relation.project(handle))
+        leaf = self._lookup(self.root, self.stat.height, tkey)
+        if tkey not in leaf.keys:
+            raise ValueError("key to be deleted not found in index")
+        del leaf.keys[tkey]
+        leaf.save()
+        # tree never shrinks -- if all keys get deleted we still have an empty shell of tree
 
     def _tkey(self, key):
         """ Transform a key dictionary into a tuple in the correct order. """
+        if key is None:
+            return None
         return tuple(key[column_name] for column_name in self.key)
 
     def _insert(self, node, depth, tkey, handle):
@@ -368,7 +399,7 @@ class BTreeIndex(DbIndex):
         self.key_profile = [types_by_colname[column_name] for column_name in self.key]
 
 
-class TestBTreeIndex(unittest.TestCase):
+class TestBTree(unittest.TestCase):
     def setUp(self):
         dbenv = os.path.expanduser('~/.dbtests')
         if not os.path.exists(dbenv):
@@ -377,7 +408,7 @@ class TestBTreeIndex(unittest.TestCase):
             os.remove(os.path.join(dbenv, file))
         initialize(dbenv)
 
-    def testHashIndex(self):
+    def testIndex(self):
         table = HeapTable('foo', ['a', 'b'], {'a': {'data_type': 'INT'}, 'b': {'data_type': 'INT'}})
         table.create()
         row1 = {'a': 12, 'b': 99}
@@ -396,9 +427,30 @@ class TestBTreeIndex(unittest.TestCase):
         result = [table.project(handle) for handle in index.lookup({'a': 6})]
         self.assertEqual(result, [])
 
-        for j in range(10):
-            for i in range(1000):
-                result = [table.project(handle) for handle in index.lookup({'a': i+100})]
-                self.assertEqual(result, [{'a': i+100, 'b': -i}])
+        for i in range(1000):
+            result = [table.project(handle) for handle in index.lookup({'a': i+100})]
+            self.assertEqual(result, [{'a': i+100, 'b': -i}])
 
-        # FIXME: other things to test: delete, multiple keys
+        row = {'a': 44, 'b': 44}
+        thandle = table.insert(row)
+        index.insert(thandle)
+        result = [table.project(handle) for handle in index.lookup({'a': 44})]
+        self.assertEqual(result, [row])
+        index.delete(thandle)
+        table.delete(thandle)
+        result = [table.project(handle) for handle in index.lookup({'a': 44})]
+        self.assertEqual(result, [])
+
+        result = [table.project(handle) for handle in index.range({'a': 100}, {'a': 310})]
+        for i in range(210):
+            self.assertEqual(result[i]['a'], 100+i)
+
+        count_i = len([handle for handle in index.range(None, None)])
+        count_t = len([handle for handle in table.select()])
+        self.assertEqual(count_i, count_t)
+        for handle in table.select():
+            index.delete(handle)
+        self.assertEqual(0, len([handle for handle in index.range(None, None)]))
+
+        # FIXME: other things to test: multiple keys
+        index.drop()

@@ -128,7 +128,7 @@ class TestShell(unittest.TestCase):
         columns, attributes, rows, message = Shell.run("CREATE UNIQUE INDEx bmy ON abcdefg (abb, b_$cx) USING HASH")[0]
         self.assertEqual(message, 'created index bmy')
 
-        columns, attributes, rows, message = Shell.run("CREATE INDEx xxy ON abcdefg (b_$cx)")[0]
+        columns, attributes, rows, message = Shell.run("CREATE unique INDEx xxy ON abcdefg (b_$cx)")[0]
         self.assertEqual(message, 'created index xxy')
 
         columns, attributes, rows, message = Shell.run("SHOW INDEX FROM abcdefg")[0]
@@ -138,11 +138,37 @@ class TestShell(unittest.TestCase):
                                  'seq_in_index': 1, 'table_name': 'abcdefg'},
                                 {'column_name': 'b_$cx', 'index_name': 'bmy', 'index_type': 'HASH', 'is_unique': True,
                                  'seq_in_index': 2, 'table_name': 'abcdefg'},
-                                {'column_name': 'b_$cx', 'index_name': 'xxy', 'index_type': 'BTREE', 'is_unique': False,
+                                {'column_name': 'b_$cx', 'index_name': 'xxy', 'index_type': 'BTREE', 'is_unique': True,
                                  'seq_in_index': 1, 'table_name': 'abcdefg'}])
 
         columns, attributes, rows, message = Shell.run("DROP INDEX bmy ON abcdefg")[0]
         self.assertEqual(message, 'dropped index bmy')
+
+        Shell.run('CREATE TABLE foo (id INT, data TEXT)')
+        columns, attributes, rows, message = Shell.run('INSERT INTO foo VALUES (1,"one")')[0]
+        self.assertEqual(message, 'successfully inserted 1 row into foo')
+        columns, attributes, rows, message = Shell.run('INSERT INTO foo (data,id) VALUES ("Two",2)')[0]
+        self.assertEqual(message, 'successfully inserted 1 row into foo')
+        columns, attributes, rows, message = Shell.run('INSERT INTO foo VALUES (3,"three")')[0]
+        self.assertEqual(message, 'successfully inserted 1 row into foo')
+        columns, attributes, rows, message = Shell.run('SELECT * FROM foo')[0]
+        self.assertEqual(rows, [{'data': 'one', 'id': 1}, {'data': 'Two', 'id': 2}, {'data': 'three', 'id': 3}])
+        columns, attributes, rows, message = Shell.run('SELECT * FROM foo WHERE data="one"')[0]
+        self.assertEqual(rows, [{'data': 'one', 'id': 1}])
+        columns, attributes, rows, message = Shell.run('SELECT data FROM foo WHERE id=2')[0]
+        self.assertEqual(rows, [{'data': 'Two'}])
+
+        columns, attributes, rows, message = Shell.run("CREATE UNIQUE INDEX fx ON foo (id)")[0]
+        self.assertEqual(message, 'created index fx')
+        columns, attributes, rows, message = Shell.run('SELECT * FROM foo WHERE data="one"')[0]
+        self.assertEqual(rows, [{'data': 'one', 'id': 1}])
+        columns, attributes, rows, message = Shell.run('SELECT * FROM foo WHERE id=2')[0]
+        self.assertEqual(rows, [{'data': 'Two', 'id': 2}])
+
+        columns, attributes, rows, message = Shell.run("DELETE FROM foo WHERE id=3")[0]
+        self.assertEqual(message, 'successfully deleted 1 rows and from 1 indices')
+        columns, attributes, rows, message = Shell.run('INSERT INTO foo VALUES (4,"four")')[0]
+        self.assertEqual(message, 'successfully inserted 1 row into foo and 1 indices')
 
 
 if __name__ == "__main__":

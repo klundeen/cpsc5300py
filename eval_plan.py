@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from schema_tables import Schema
 
 class EvalPlan(ABC):
     """ Evaluation plan for a query. """
@@ -50,6 +51,19 @@ class EvalPlanSelect(EvalPlan):
         self.where = where
         self.relation = relation
 
+    def optimize(self):
+        """ Optimize underlying relation. Also look for index opportunity. """
+        if isinstance(self.relation, EvalPlanTableScan):
+            index_names = Schema.indices.get_index_names(self.relation.table.table_name)
+            for index_name in index_names:
+                index = Schema.indices.get_index(self.relation.table.table_name, index_name)
+                if index.key[0] in self.where:
+                    key = {k: self.where[k] for k in self.where if k in index.key}
+                    return EvalPlanIndexLookup(key, index)
+            return self
+        else:
+            return EvalPlanSelect(self.where, self.relation.optimize())
+
     def pipeline(self):
         # base case is select on a table scan
         if isinstance(self.relation, EvalPlanTableScan):
@@ -73,6 +87,10 @@ class EvalPlanProject(EvalPlan):
         self.column_names = [name for name in projection]
         self.relation = relation
 
+    def optimize(self):
+        """ Optimize underlying relation. """
+        return EvalPlanProject(self.projection, self.relation.optimize())
+
     def evaluate(self):
         table, handles = self.relation.pipeline()
         return (table.project(handle, self.projection) for handle in handles)
@@ -83,6 +101,23 @@ class EvalPlanProject(EvalPlan):
     def get_column_attributes(self):
         ca = self.relation.get_column_attributes()
         return {k: ca[k] for k in self.column_names}
+
+
+class EvalPlanIndexLookup(EvalPlan):
+    """ Evaluation plan is to lookup an equality predicate using an index. """
+    def __init__(self, key, index):
+        self.key = key
+        self.index = index
+
+    def pipeline(self):
+        """ Use the index on relation. """
+        return self.index.relation, self.index.lookup(self.key)
+
+    def get_column_names(self):
+        return self.index.relation.column_names
+
+    def get_column_attributes(self):
+        return self.index.relation.columns
 
 
 class PipelineCursor(object):

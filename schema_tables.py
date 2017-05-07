@@ -7,6 +7,7 @@ import re
 from storage_engine import DbIndex
 from heap_storage import HeapTable
 from sqlparse import RESERVED_WORDS
+from btree_index import BTreeIndex
 
 
 class Schema(object):
@@ -194,7 +195,7 @@ class _Indices(HeapTable):
         column_names, attributes = self.get_columns(table_name, index_name)
         table = Schema.tables.get_table(table_name)
         if attributes['index_type'] == 'BTREE':
-            index = DummyIndex(table, attributes['index_name'], column_names, attributes['is_unique'])  # FIXME
+            index = BTreeIndex(table, attributes['index_name'], column_names, attributes['is_unique'])
         else:  # HASH
             index = DummyIndex(table, attributes['index_name'], column_names, attributes['is_unique'])  # FIXME
         self.add_to_cache(table_name, index_name, index)

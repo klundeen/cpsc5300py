@@ -122,7 +122,7 @@ class SlottedPage(DbBlock):
         """ Calculate if we have room to store a record with given size. The size should include the 4 bytes
             for the header, too, if this is an add.
         """
-        available = self.end_free - (self.num_records + 1) * 4
+        available = self.end_free - (self.num_records + 2) * 4
         return size <= available
 
     def _slide(self, start, end):
@@ -374,6 +374,7 @@ class HeapTable(DbRelation):
 
     def project(self, handle, column_names=None):
         """ Return a sequence of values for handle given by column_names. """
+        self.open()
         block_id, record_id = handle
         block = self.file.get(block_id)
         data = block.get(record_id)

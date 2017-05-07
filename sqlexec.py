@@ -324,7 +324,7 @@ class SQLExecInsertStatement(SQLExec):
         for index_name in index_names:
             index = Schema.indices.get_index(self.table_name, index_name)
             index.insert(t_insert)
-        suffix = ' and from ' + str(len(index_names)) + ' indices' if index_names else ""
+        suffix = ' and ' + str(len(index_names)) + ' indices' if index_names else ""
 
         return None, None, None, 'successfully inserted 1 row into ' + self.table_name + suffix
 
