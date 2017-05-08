@@ -123,10 +123,11 @@ class DbFile(ABC):
 class DbRelation(ABC):
     """ Abstraction of a database relation as expressed through a storage engine. """
 
-    def __init__(self, table_name, column_names, column_attributes):
+    def __init__(self, table_name, column_names, column_attributes, primary_key=None):
         self.table_name = table_name
         self.column_names = column_names
         self.columns = column_attributes
+        self.primary_key = primary_key
 
     @abstractmethod
     def create(self):

@@ -290,8 +290,8 @@ class HeapFile(DbFile):
 class HeapTable(DbRelation):
     """ Heap storage engine. """
 
-    def __init__(self, table_name, column_names, column_attributes):
-        super().__init__(table_name, column_names, column_attributes)
+    def __init__(self, table_name, column_names, column_attributes, primary_key=None):
+        super().__init__(table_name, column_names, column_attributes, primary_key)
         self.file = HeapFile(table_name)
 
     def create(self):
@@ -343,6 +343,7 @@ class HeapTable(DbRelation):
         block = self.file.get(block_id)
         block.put(record_id, self._marshal(full_row))
         self.file.put(block)
+        return handle
 
     def delete(self, handle):
         """ Conceptually, execute: DELETE FROM <table_name> WHERE <handle>
@@ -360,7 +361,7 @@ class HeapTable(DbRelation):
             If handles is specified, then use those as the base set of records to apply a refined selection to.
             Returns a list of handles for qualifying rows.
         """
-        # FIXME: ignoring limit, order, group, and more complex where clauses (just doing equality for now)
+        # FIXME: ignoring limit, order, group
         self.open()
         if handles is None:
             for block_id in self.file.block_ids():
@@ -394,7 +395,6 @@ class HeapTable(DbRelation):
 
     def _selected(self, handle, where):
         """ Checks if given record succeeds given where clause. """
-        # FIXME: just doing equality checks for now
         row = self.project(handle, where)
         for column_name in where:
             if row[column_name] != where[column_name]:
