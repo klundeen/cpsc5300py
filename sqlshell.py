@@ -92,7 +92,7 @@ class TestShell(unittest.TestCase):
     def test_statements(self):
         columns, attributes, rows, message = Shell.run("SHOW COLUMNS FROM _tables")[0]
         self.assertEqual(columns, ['column_name'])
-        self.assertEqual(rows, [{'column_name': 'table_name'}])
+        self.assertEqual(rows, [{'column_name': 'table_name'}, {'column_name': 'storage_engine'}])
 
         columns, attributes, rows, message = Shell.run("CREATE TABLE hsy67 (a int, b text, c boolean)")[0]
         self.assertEqual(message, 'created hsy67')
@@ -102,8 +102,8 @@ class TestShell(unittest.TestCase):
         self.assertEqual(set([row['column_name'] for row in rows]), {'a', 'b', 'c'})
 
         columns, attributes, rows, message = Shell.run("SHOW TABLES")[0]
-        self.assertEqual(columns, ('table_name',))
-        self.assertEqual(rows, [{'table_name': 'hsy67'}])
+        self.assertEqual(columns, ('table_name', 'storage_engine'))
+        self.assertEqual(rows, [{'table_name': 'hsy67', 'storage_engine': 'HEAP'}])
 
         columns, attributes, rows, message = Shell.run("CREATE TABLE abcdefg (abb int, b_$cx text, ara999 boolean)")[0]
         self.assertEqual(message, 'created abcdefg')
@@ -112,8 +112,8 @@ class TestShell(unittest.TestCase):
         self.assertEqual(message, 'dropped hsy67')
 
         columns, attributes, rows, message = Shell.run("SHOW TABLES")[0]
-        self.assertEqual(columns, ('table_name',))
-        self.assertEqual(rows, [{'table_name': 'abcdefg'}])
+        self.assertEqual(columns, ('table_name', 'storage_engine'))
+        self.assertEqual(rows, [{'table_name': 'abcdefg', 'storage_engine': 'HEAP'}])
 
         columns, attributes, rows, message = Shell.run("SELECT * from _columns")[0]
         self.assertEqual(columns, ('table_name', 'column_name', 'data_type'))
@@ -169,6 +169,26 @@ class TestShell(unittest.TestCase):
         self.assertEqual(message, 'successfully deleted 1 rows and from 1 indices')
         columns, attributes, rows, message = Shell.run('INSERT INTO foo VALUES (4,"four")')[0]
         self.assertEqual(message, 'successfully inserted 1 row into foo and 1 indices')
+
+        columns, attributes, rows, message = Shell.run("CREATE TABLE bt (id INT, data TEXT, PRIMARY KEY(id))")[0]
+        self.assertEqual(message, 'created bt')
+        columns, attributes, rows, message = Shell.run('INSERT INTO bt VALUES (1,"one")')[0]
+        self.assertEqual(message, 'successfully inserted 1 row into bt')
+        columns, attributes, rows, message = Shell.run('INSERT INTO bt (data,id) VALUES ("Two",2)')[0]
+        self.assertEqual(message, 'successfully inserted 1 row into bt')
+        columns, attributes, rows, message = Shell.run('INSERT INTO bt VALUES (3,"three")')[0]
+        self.assertEqual(message, 'successfully inserted 1 row into bt')
+        columns, attributes, rows, message = Shell.run('SELECT * FROM bt')[0]
+        self.assertEqual(rows, [{'data': 'one', 'id': 1}, {'data': 'Two', 'id': 2}, {'data': 'three', 'id': 3}])
+        columns, attributes, rows, message = Shell.run('SELECT * FROM bt WHERE data="one"')[0]
+        self.assertEqual(rows, [{'data': 'one', 'id': 1}])
+        columns, attributes, rows, message = Shell.run('SELECT data FROM bt WHERE id=2')[0]
+        self.assertEqual(rows, [{'data': 'Two'}])
+        columns, attributes, rows, message = Shell.run("DELETE FROM bt WHERE id=2")[0]
+        self.assertEqual(message, 'successfully deleted 1 rows')
+        columns, attributes, rows, message = Shell.run('SELECT * FROM bt')[0]
+        self.assertEqual(rows, [{'data': 'one', 'id': 1}, {'data': 'three', 'id': 3}])
+
 
 
 if __name__ == "__main__":

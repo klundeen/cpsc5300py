@@ -65,9 +65,9 @@ class _Tables(HeapTable):
     def create(self):
         """ Create the file and also, manually add schema tables. """
         super().create()
-        self.insert({'table_name': '_tables'})
-        self.insert({'table_name': '_columns'})
-        self.insert({'table_name': '_indices'})
+        self.insert({'table_name': '_tables', 'storage_engine': 'HEAP'})
+        self.insert({'table_name': '_columns', 'storage_engine': 'HEAP'})
+        self.insert({'table_name': '_indices', 'storage_engine': 'HEAP'})
 
     def insert(self, row):
         """ Manually check that table_name is unique. """
@@ -138,7 +138,8 @@ class _Columns(HeapTable):
                      '_indices': ['table_name', 'index_name', 'seq_in_index', 'column_name', 'index_type', 'is_unique']}
         for table_name in bootstrap:
             for column_name in bootstrap[table_name]:
-                self.insert({'table_name': table_name, 'column_name': column_name, 'data_type': 'TEXT'})
+                self.insert({'table_name': table_name, 'column_name': column_name, 'data_type': 'TEXT',
+                             'primary_key_seq': 0})
 
     def insert(self, row):
         """ Manually check that (table_name, column_name) is unique. """

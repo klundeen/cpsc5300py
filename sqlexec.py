@@ -174,7 +174,7 @@ class SQLExecTableDefinition(SQLExec):
             # update _columns schema
             column_order = self.column_order
             column_attributes = self.column_attributes
-            pk = {c: i+1 for (i, c) in enumerate(self.primary_key)}
+            pk = {c: i+1 for (i, c) in enumerate(self.primary_key)} if self.primary_key is not None else {}
             try:
                 for column_name in column_order:
                     Schema.columns.insert({'table_name': self.table_name,

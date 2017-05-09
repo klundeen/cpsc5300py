@@ -220,9 +220,9 @@ class _BTreeFileLeaf(_BTreeLeafBase):
     """ Leaf of B+ Tree used to store entire tuple. """
     def __init__(self, file, block_id, key_profile, non_indexed_column_names, non_indexed_column_attributes,
                  create=False):
-        super().__init__(file, block_id, key_profile, create)
         self.column_names = non_indexed_column_names
         self.columns = non_indexed_column_attributes
+        super().__init__(file, block_id, key_profile, create)
 
     def _get_value(self, record_id):
         """ Get the record and turn it into a (block_id,record_id) handle. """
@@ -327,7 +327,7 @@ class _BTreeBase(DbIndex):
         self.stat = self.root = None
         self.closed = True
 
-    def lookup(self, key, return_key=False):
+    def lookup(self, key):
         """ Find all the rows whose columns are equal to key. Assumes key is a dictionary whose keys are the column 
             names in the index. Returns a list of row handles.
         """
@@ -335,10 +335,7 @@ class _BTreeBase(DbIndex):
         tkey = self.tkey(key)
         leaf = self._lookup(self.root, self.stat.height, tkey)
         handle = leaf.find_eq(tkey)
-        if return_key:
-            return tkey if handle is not None else None
-        else:
-            return [handle] if handle is not None else []
+        return [handle] if handle is not None else []
 
     @abstractmethod
     def _make_leaf(self, block_id=None, create=None):
@@ -354,38 +351,38 @@ class _BTreeBase(DbIndex):
         else:
             return self._lookup(node.find(tkey, depth, self._make_leaf), depth - 1, tkey)  # recursive case
 
-    def insert(self, handle, projection=None):
-        """ Insert a row with the given handle. Row must exist in relation already.
-            Specify one of handle or row.
-        """
+    def insert(self, handle):
+        """ Insert a row with the given handle. Row must exist in relation already. """
         self.open()
-        if projection is None:
-            projection = self.relation.project(handle, self.key)
+        projection = self.relation.project(handle, self.key)
         tkey = self.tkey(projection)
-
         split_root = self._insert(self.root, self.stat.height, tkey, handle)
-
-        # if we split the root grow the tree up one level
         if split_root is not None:
-            rroot, boundary = split_root
-            root = _BTreeInterior(self.file, 0, self.key_profile, create=True)
-            root.first = self.root.id
-            root.insert(boundary, rroot.id)
-            root.save()
-            self.stat.root_id = root.id
-            self.stat.height += 1
-            self.stat.save()
-            self.root = root
+            self._split_root(*split_root)
 
-    def range(self, minkey, maxkey, return_keys=False):
+    def _split_root(self, rroot, boundary):
+        """ if we split the root grow the tree up one level
+        :param rroot: new sibling of old root
+        :param boundary: split boundary between old root and rroot
+        """
+        root = _BTreeInterior(self.file, 0, self.key_profile, create=True)
+        root.first = self.root.id
+        root.insert(boundary, rroot.id)
+        root.save()
+        self.stat.root_id = root.id
+        self.stat.height += 1
+        self.stat.save()
+        self.root = root
+
+    def range(self, tmin, tmax, return_keys=False):
         """ Finds all the rows whose columns are such that minkey <= columns <= maxkey.  Assumes key is a dictionary 
             whose keys are the column names in the index. Returns a list of row handles.
             Some index subclasses do not support range().
         """
-        tmin = self.tkey(minkey)
-        tmax = self.tkey(maxkey)
         start = self._lookup(self.root, self.stat.height, tmin)
         for tkey in sorted(start.keys):
+            if tmax is not None and tkey > tmax:
+                return
             if tmin is None or tkey >= tmin:
                 yield start.keys[tkey] if not return_keys else tkey
         next_leaf_id = start.next_leaf
@@ -524,6 +521,22 @@ class _BTreeFile(_BTreeBase):
             create = False
         return _BTreeFileLeaf(self.file, block_id, self.key_profile, self.non_key_column_names, self.columns, create)
 
+    def insert(self, projection):
+        """ Insert a row with the given value. """
+        self.open()
+        tkey = self.tkey(projection)
+        split_root = self._insert(self.root, self.stat.height, tkey, projection)
+        if split_root is not None:
+            self._split_root(*split_root)
+
+    def lookup(self, tkey):
+        """ Find all the rows whose columns are equal to key. Assumes key is a dictionary whose keys are the column 
+            names in the index. Returns the value for tkey
+        """
+        self.open()
+        leaf = self._lookup(self.root, self.stat.height, tkey)
+        return leaf.find_eq(tkey)
+
 
 class BTreeTable(DbRelation):
     """ BTree storage engine.
@@ -572,8 +585,8 @@ class BTreeTable(DbRelation):
             Return the handle of the inserted row.
         """
         row = self._validate(row)
-        tkey = self.index.tkey(row)
-        return self.index.insert(tkey, projection=row)
+        self.index.insert(row)
+        return self.index.tkey(row)
 
     def update(self, tkey, new_values):
         """ Expect new_values to be a dictionary with column name keys.
@@ -588,8 +601,8 @@ class BTreeTable(DbRelation):
         new_row = self._validate(new_row)
         new_tkey = self.index.tkey(new_row)
         self.index.delete(tkey)
-        self.index.insert(new_tkey, new_row)
-        return new_tkey
+        self.index.insert(new_row)
+        return new_tkey[:]
 
     def delete(self, tkey):
         """ Conceptually, execute: DELETE FROM <table_name> WHERE <tkey>
@@ -616,16 +629,47 @@ class BTreeTable(DbRelation):
 
     def _make_range(self, where):
         """ Turn the where conjunction into a suitable range on the index. """
-        # FIXME -- for now always traverse the entire index
-        return None, None, where
+        if where is None:
+            return None, None, None
+        additional_where = where.copy()
+        tkey = []
+        for c in self.primary_key:
+            if c in additional_where:
+                del additional_where[c]
+            if c in where:
+                tkey.append(where[c])
+            else:
+                break
+        if len(additional_where) == 0:
+            additional_where = None
+        tkey = tuple(tkey) if len(tkey) > 0 else None
+        return tkey, tkey, additional_where
 
     def project(self, tkey, column_names=None):
         """ Return a sequence of values for handle given by column_names. """
-        row = self.index.lookup(tkey)
         if column_names is None:
+            row = self.index.lookup(tkey)
+            if row is None:
+                raise ValueError("Cannot project: invalid handle")
+            row = row.copy()
+            for i, c in enumerate(self.primary_key):
+                row[c] = tkey[i]
             return row
         else:
-            return {k: row[k] for k in column_names}
+            ret = {}
+            key_columns = [c for c in column_names if c in self.primary_key]
+            nonkey_columns = [c for c in column_names if c not in self.primary_key]
+            if len(nonkey_columns) > 0:
+                row = self.index.lookup(tkey)
+                if row is None:
+                    raise ValueError("Cannot project: invalid handle")
+                for c in nonkey_columns:
+                    ret[c] = row[c]
+            if len(key_columns) > 0:
+                for i, c in enumerate(self.primary_key):
+                    if c in key_columns:
+                        ret[c] = tkey[i]
+            return ret
 
     def _selected(self, handle, where):
         """ Checks if given record succeeds given where clause. """
@@ -696,7 +740,7 @@ class TestBTree(unittest.TestCase):
         result = [table.project(handle) for handle in index.lookup({'a': 44})]
         self.assertEqual(result, [])
 
-        result = [table.project(handle) for handle in index.range({'a': 100}, {'a': 310})]
+        result = [table.project(handle) for handle in index.range(index.tkey({'a': 100}), index.tkey({'a': 310}))]
         for i in range(210):
             self.assertEqual(result[i]['a'], 100+i)
 
@@ -709,3 +753,45 @@ class TestBTree(unittest.TestCase):
 
         # FIXME: other things to test: multiple keys
         index.drop()
+
+    def testTable(self):
+        table = BTreeTable('_test_btable', ['id', 'a', 'b'],
+                           {'id': {'data_type': 'INT'}, 'a': {'data_type': 'INT'}, 'b': {'data_type': 'TEXT'}},
+                           ['id'])
+        table.create_if_not_exists()
+        table.close()
+        table.open()
+        # add about 10 blocks of data
+        rows = [{'a': 12, 'b': 'Hello!'}, {'a': -192, 'b': 'Much longer piece of text here' * 10},
+                {'a': 1000, 'b': ''}] * 10
+        # FIXME: very long text fields cause the splits to occasionally fail (replace *10 with *100 above)
+        handles = []
+        id = 0
+        expected = {}
+        for row in rows:
+            row['id'] = id
+            expected[id] = row.copy()
+            handles.append(table.insert(expected[id]))
+            id += 1
+            # print([h for h in table.select()])
+        for handle in table.select():
+            row = table.project(handle)
+            self.assertEqual(row, expected[row['id']])
+
+        # delete
+        self.assertEqual([table.project(x) for x in table.select(where=rows[-1])], [rows[-1]])
+        table.delete(handles[-1])
+        self.assertEqual([table.project(x) for x in table.select(where=rows[-1])], [])
+        table.delete(handles[0])
+        count = 0
+        for handle in table.select():
+            row = table.project(handle)
+            self.assertEqual(row, expected[row['id']])
+            count += 1
+        self.assertEqual(count, len(handles)-2)
+
+
+        table.update(handles[1], {'a': 999})
+        self.assertEqual([table.project(x) for x in table.select(where={'a': 999})][0]['a'], 999)
+
+        table.drop()
