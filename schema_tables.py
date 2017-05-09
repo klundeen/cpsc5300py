@@ -7,7 +7,7 @@ import re
 from storage_engine import DbIndex
 from heap_storage import HeapTable
 from sqlparse import RESERVED_WORDS
-from btree_index import BTreeIndex
+from btree_index import BTreeIndex, BTreeTable
 
 
 class Schema(object):
@@ -52,8 +52,9 @@ class _Tables(HeapTable):
         For now, we are not indexing anything, so a query requires sequential scan of table.
     """
     TABLE_NAME = '_tables'
-    COLUMN_ORDER = ('table_name',)
-    COLUMNS = {'table_name': {'data_type': 'TEXT', 'not_null': True, 'validate': acceptable_name}}
+    COLUMN_ORDER = ('table_name', 'storage_engine')
+    COLUMNS = {'table_name': {'data_type': 'TEXT', 'not_null': True, 'validate': acceptable_name},
+               'storage_engine': {'data_type': 'TEXT', 'not_null': True}}
     table_cache = {}  # We use this to avoid having to do concurrency control between different instances in this app
 
     # In general, we only want to open each file once.
@@ -77,20 +78,29 @@ class _Tables(HeapTable):
         return super().insert(row)
 
     @staticmethod
-    def get_columns(table_name):
+    def get_columns(table_name, include_primary_key=False):
         """ Return a list of column names and column attributes for given table. """
         _columns = Schema.columns
         column_rows = [_columns.project(handle) for handle in _columns.select({'table_name': table_name})]
         column_names = [row['column_name'] for row in column_rows]
         column_attributes = {row['column_name']: {'data_type': row['data_type']} for row in column_rows}
-        return column_names, column_attributes
+        if not include_primary_key:
+            return column_names, column_attributes
+        pk = {row['primary_key_seq']: row['column_name'] for row in column_rows}
+        pk_count = max(pk)
+        primary_key = [pk[i] for i in range(1, max(pk)+1)] if pk_count > 0 else None
+        return column_names, column_attributes, primary_key
 
     def get_table(self, table_name):
         """ Return a table for given table_name. """
         if table_name in _Tables.table_cache:
             return _Tables.table_cache[table_name]
-        column_names, column_attributes = self.get_columns(table_name)
-        table = HeapTable(table_name, column_names, column_attributes)
+        column_names, column_attributes, primary_key = self.get_columns(table_name, include_primary_key=True)
+        storage_engine = [self.project(h) for h in self.select({'table_name': table_name})][0]['storage_engine']
+        if storage_engine == 'BTREE':
+            table = BTreeTable(table_name, column_names, column_attributes, primary_key=primary_key)
+        else:
+            table = HeapTable(table_name, column_names, column_attributes)
         _Tables.table_cache[table_name] = table
         return table
 
@@ -114,7 +124,8 @@ class _Columns(HeapTable):
     COLUMN_ORDER = ('table_name', 'column_name', 'data_type')
     COLUMNS = {'table_name': {'data_type': 'TEXT', 'not_null': True},
                'column_name': {'data_type': 'TEXT', 'not_null': True, 'validate': acceptable_name},
-               'data_type': {'data_type': 'TEXT', 'not_null': True, 'validate': acceptable_data_type}}
+               'data_type': {'data_type': 'TEXT', 'not_null': True, 'validate': acceptable_data_type},
+               'primary_key_seq': {'data_type': 'INT', 'not_null': True}}
 
     def __init__(self):
         super().__init__(self.TABLE_NAME, self.COLUMN_ORDER, self.COLUMNS)
@@ -122,8 +133,8 @@ class _Columns(HeapTable):
     def create(self):
         """ Create the file and also, manually add schema tables. """
         super().create()
-        bootstrap = {'_tables': ['table_name'],
-                     '_columns': ['table_name', 'column_name', 'data_type'],
+        bootstrap = {'_tables': ['table_name', 'storage_engine'],
+                     '_columns': ['table_name', 'column_name', 'data_type', 'primary_key_seq'],
                      '_indices': ['table_name', 'index_name', 'seq_in_index', 'column_name', 'index_type', 'is_unique']}
         for table_name in bootstrap:
             for column_name in bootstrap[table_name]:

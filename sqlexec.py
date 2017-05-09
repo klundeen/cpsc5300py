@@ -6,6 +6,7 @@ For: CPSC 4300, S17
 import os
 import sys
 import heap_storage
+from btree_index import BTreeTable
 from schema_tables import Schema
 from eval_plan import EvalPlanTableScan, EvalPlanSelect, EvalPlanProject
 from sqlparse import SQLstatement
@@ -155,24 +156,37 @@ class SQLExecTableDefinition(SQLExec):
         """ Create a table with given table_name (string) and table_element_list (from parse tree). """
         super().__init__(parse)
         self.table_name = parse['table_name']
-        self.columns = parse['table_element_list']
+        columns = parse['table_element_list']
+        self.column_order = [c['def_column_name'] for c in columns if "def_column_name" in c]
+        self.column_attributes = {c['def_column_name']: {'data_type': c['data_type']}
+                                 for c in columns if "def_column_name" in c}
+        if 'primary_key' in columns[-1]:
+            self.primary_key = [c for c in columns[-1]['primary_key']['key_columns']]
+        else:
+            self.primary_key = None
 
     def execute(self):
         """ Execute the statement. """
         # update _tables schema
-        Schema.tables.insert({'table_name': self.table_name})
+        storage_engine = 'HEAP' if self.primary_key is None else 'BTREE'
+        Schema.tables.insert({'table_name': self.table_name, 'storage_engine': storage_engine })
         try:
             # update _columns schema
-            column_order = [c['column_name'] for c in self.columns]
-            column_attributes = {c['column_name']: {'data_type': c['data_type']} for c in self.columns}
+            column_order = self.column_order
+            column_attributes = self.column_attributes
+            pk = {c: i+1 for (i, c) in enumerate(self.primary_key)}
             try:
                 for column_name in column_order:
                     Schema.columns.insert({'table_name': self.table_name,
                                            'column_name': column_name,
-                                           'data_type': column_attributes[column_name]['data_type']})
+                                           'data_type': column_attributes[column_name]['data_type'],
+                                           'primary_key_seq': pk[column_name] if column_name in pk else 0})
 
                 # create table
-                table = heap_storage.HeapTable(self.table_name, column_order, column_attributes)
+                if storage_engine == 'BTREE':
+                    table = BTreeTable(self.table_name, column_order, column_attributes, primary_key=self.primary_key)
+                else:
+                    table = heap_storage.HeapTable(self.table_name, column_order, column_attributes)
                 table.create()
                 Schema.tables.add_to_cache(self.table_name, table)
             except:
