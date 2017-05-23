@@ -53,6 +53,7 @@ INDEX = CaselessKeyword("INDEX")
 INSERT = CaselessKeyword("INSERT")
 INT = CaselessKeyword("INT") | CaselessKeyword("INTEGER")
 INTO = CaselessKeyword("INTO")
+JOIN = CaselessKeyword("JOIN")
 KEY = CaselessKeyword("KEY")
 ON = CaselessKeyword("ON")
 OR = CaselessKeyword("OR")
@@ -101,6 +102,8 @@ whereExpression << whereCondition + ZeroOrMore((AND | OR) + whereExpression)
 value = realNum | intNum | quotedString
 value_list = Group(delimitedList(value))
 
+join_using = Group(JOIN + table_name("join_table") + USING + "(" + column_name_list("join_columns") + ")")
+
 # top level statements
 table_definition = CREATE + TABLE + table_name("table_name") + "(" + column_definition_list("table_element_list") + ")"
 index_definition = (CREATE + Optional(UNIQUE)("unique") + INDEX + ident("index_name") + ON +
@@ -116,6 +119,7 @@ insert_statement = (INSERT + INTO + table_name("table_name") + Optional("(" + co
 delete_statement = DELETE + FROM + table_name("table_name") + Optional(Group(WHERE + whereExpression), "")("where")
 query <<= (SELECT + ('*' | column_name_list)("columns") +
                 FROM + table_names("table_names") +
+                ZeroOrMore(join_using)("joins") +
                 Optional(Group(WHERE + whereExpression), "")("where"))
 
 SQLstatement = (table_definition("table_definition") |
@@ -174,4 +178,7 @@ if __name__ == "__main__":
         Select A from Sys.dual where a in ('RED','GREEN','BLUE') and b in (10,20,30)
 
         # where clause with comparison operator
-        Select A,b from table1,table2 where table1.id eq table2.id""")
+        Select A,b from table1,table2 where table1.id eq table2.id
+        
+        # join
+        SELECT * FROM r JOIN s USING(x,y) JOIN t USING(z) JOIN u USING(w) WHERE a < b""")

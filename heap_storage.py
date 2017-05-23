@@ -157,7 +157,7 @@ class SlottedPage(DbBlock):
 
 class TestSlottedPage(unittest.TestCase):
     def test_basics(self):
-        p = SlottedPage(block_size=30)
+        p = SlottedPage(block_size=32)
 
         # additions
         record_id = p.add(b'Hello')
@@ -185,7 +185,7 @@ class TestSlottedPage(unittest.TestCase):
 
         # the block
         self.assertEqual(p.block,
-                         b'\x00\x03\x00\x13\x00\x00\x00\x00\x00\x04\x00\x1a\x00\x06\x00\x14\x00\x00\x00WGeorgeWow!')
+                         b'\x00\x03\x00\x15\x00\x00\x00\x00\x00\x04\x00\x1c\x00\x06\x00\x16\x00\x00\x00\x00\x00WGeorgeWow!')
 
     def test_more_deletes(self):
         p = SlottedPage(block_size=100)

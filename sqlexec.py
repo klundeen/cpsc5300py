@@ -8,7 +8,7 @@ import sys
 import heap_storage
 from btree_index import BTreeTable
 from schema_tables import Schema
-from eval_plan import EvalPlanTableScan, EvalPlanSelect, EvalPlanProject
+from eval_plan import EvalPlanTableScan, EvalPlanSelect, EvalPlanProject, EvalPlanLoopJoin
 from sqlparse import SQLstatement
 
 DB_ENV = '~/cpsc4300env/pydata'  # this can get changed by calling initialize_db_env
@@ -287,15 +287,22 @@ class SQLExecQuery(SQLExec):
         super().__init__(parse)
         self.table_names = parse['table_names']
         self.query_columns = parse['columns'] if parse['columns'] != '*' else None
+        self.joins = parse['joins'] if 'joins' in parse else None
         self.where = parse['where']
 
     def execute(self):
         table_name = self.table_names[0]
         table = Schema.tables.get_table(table_name)
-        where = _get_where_conjunction(self.where, table.columns)
 
         # make the evaluation plan
         plan = EvalPlanTableScan(table)
+        if self.joins is not None:
+            for join in self.joins:
+                outer = plan
+                inner_table = Schema.tables.get_table(join['join_table'])
+                inner = EvalPlanTableScan(inner_table)
+                plan = EvalPlanLoopJoin(outer, inner, join['join_columns'])
+        where = _get_where_conjunction(self.where, plan.get_column_attributes())
         if where is not None:
             plan = EvalPlanSelect(where, plan)
         if self.query_columns is not None:

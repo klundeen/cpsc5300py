@@ -29,6 +29,61 @@ class EvalPlan(ABC):
     def get_column_attributes(self):
         pass
 
+class PipelineTable(object):
+    """ Table to use when passing pipelined rows (handle is just the row dict). """
+    def project(self, row, column_names=None):
+        if column_names is None:
+            return row
+        else:
+            return {k: row[k] for k in column_names}
+
+    def select(self, handles, where):
+        for handle in handles:
+            if where is None or self._selected(handle, where):
+                yield handle
+
+    def _selected(self, row, where):
+        """ Checks if given record succeeds given where clause. """
+        for column_name in where:
+            if row[column_name] != where[column_name]:
+                return False
+        return True
+
+
+class EvalPlanLoopJoin(EvalPlan):
+    """ Evaluation plan to do a loop join. """
+    def __init__(self, outer, inner, using):
+        self.outer = outer
+        self.inner = inner
+        self.using = using
+
+    def pipeline(self):
+        def helper():
+            ot, ohs = self.outer.pipeline()
+            for oh in ohs:
+                orec = ot.project(oh)
+                ocriteria = [orec[k] for k in self.using]
+                it, ihs = self.inner.pipeline()
+                for ih in ihs:
+                    irec = it.project(ih)
+                    icriteria = [irec[k] for k in self.using]
+                    if ocriteria == icriteria:
+                        yield dict(orec, **irec)  # combine the records
+        return PipelineTable(), helper()
+
+    def get_column_names(self):
+        """ Take union of set of names from outer and inner tables. """
+        return set(self.outer.get_column_names()) | set(self.inner.get_column_names())
+
+    def get_column_attributes(self):
+        """ Take union of set of attributes from outer and inner tables. Outer attribute wins if in both. """
+        attributes = self.outer.get_column_attributes()
+        inner = self.inner.get_column_attributes()
+        for k in self.get_column_names():
+            if k not in attributes:
+                attributes[k] = inner[k]
+        return attributes
+
 
 class EvalPlanTableScan(EvalPlan):
     """ Evaluation plan is to scan every record in a physical table. """

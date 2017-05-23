@@ -189,6 +189,19 @@ class TestShell(unittest.TestCase):
         columns, attributes, rows, message = Shell.run('SELECT * FROM bt')[0]
         self.assertEqual(rows, [{'data': 'one', 'id': 1}, {'data': 'three', 'id': 3}])
 
+        Shell.run("CREATE TABLE r (x int, a text, y int); CREATE TABLE s (y int, b text, z int, PRIMARY KEY(y))")
+        Shell.run("CREATE TABLE t (z int, c text)")
+        for x, a in enumerate(('zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten')):
+            Shell.run("INSERT INTO r VALUES (" + ','.join((str(x), '"'+a+'"', str(x%3))) + ")")
+        for y, b in enumerate(('cero', 'uno', 'dos')):
+            Shell.run("INSERT INTO s VALUES (" + ','.join((str(y), '"'+b+'"', str((y+1)*10))) + ")")
+        for z, c in enumerate(('ten', 'twenty', 'thirty')):
+            Shell.run("INSERT INTO t VALUES (" + ','.join((str((z+1)*10), '"'+c+'"')) + ")")
+        (columns, attributes,
+         rows, message) = Shell.run('SELECT a, b, c FROM r JOIN s USING(y) JOIN t USING(z) WHERE b="uno"')[0]
+        self.assertEqual(columns, ["a", "b", "c"])
+        self.assertEqual(rows, [{'a': 'one', 'b': 'uno', 'c': 'twenty'}, {'a': 'four', 'b': 'uno', 'c': 'twenty'},
+                                {'a': 'seven', 'b': 'uno', 'c': 'twenty'}, {'a': 'ten', 'b': 'uno', 'c': 'twenty'}])
 
 
 if __name__ == "__main__":
