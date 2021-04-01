@@ -6,7 +6,7 @@ For: CPSC 4300, S17
 import os
 import re
 import sys
-from bsddb3 import db as bdb
+from berkeleydb import db as bdb
 from sqlparse import RESERVED_WORDS
 
 DB_ENV = '/Users/klundeen/cpsc4300env/data'  # this can get changed by calling initialize_db_env
