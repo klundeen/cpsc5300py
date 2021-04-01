@@ -5,11 +5,11 @@ import os
 import re
 import sys
 import unittest
-from bsddb3 import db as bdb
+from berkeleydb import db as bdb
 from storage_engine import DbBlock, DbFile, DbRelation
 
 DB_BLOCK_SIZE = 4096
-_DB_ENV = '/Users/klundeen/cpsc4300env/data'  # this can get changed by calling initialize_db_env
+_DB_ENV = '/home/fac/lundeenk/cpsc5300/data'  # this can get changed by calling initialize_db_env
 
 
 class SlottedPage(DbBlock):
